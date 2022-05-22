@@ -196,7 +196,6 @@ class CustomPictDataset(Dataset):
         if self.domain_choosen:
             row = self.data.iloc[idx]
             pict, mask = row['img'], row['mask']
-            print(pict, mask)
             brain = self.transform(Image.open(pict).convert('L'))
             mask = self.transform(Image.open(mask).convert('L'))
             mask = (mask > 200).to(mask.dtype)

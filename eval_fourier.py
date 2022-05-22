@@ -1,3 +1,5 @@
+import glob
+
 import yaml
 import os
 
@@ -8,16 +10,17 @@ from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader, random_split
 from torchvision.transforms import transforms
 from tqdm import tqdm
+from PIL import Image
 
 import torch
 import torchvision
 
 from torch.utils.tensorboard import SummaryWriter
 
-
 from loader.dataloader import CustomPictDataset
 
 from config_funcs import get_params
+from loader.dataloader_functions import create_df_from_csv
 from loses.loses import SoloClassDiceLossIvan, CombinedLoss, SoloClassDiceLoss
 from metrics.metric_func import dice_loss, sdice
 # for printing
@@ -35,38 +38,49 @@ if torch.cuda.is_available():
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
-def eval_data(net, dataset, id_list):
-    data_ids = dataset.data
-    sdice_list = []
+def eval_data(net, data):
+    transform = transforms.Compose([transforms.Resize([int(256), int(256)]),
+                                    transforms.PILToTensor()])
     net.eval()
-    with torch.set_grad_enabled(False):
-        for id in id_list:
-            print(dataset.data)
-            dataset.data = data_ids[data_ids == id]
-            print(dataset.data)
-            loader = DataLoader(dataset, batch_size=1, shuffle=False)
-            print(loader)
-            data_list = []
-            mask_list = []
+    sdice_list = []
+    with torch.no_grad():
 
-            for i, batch in enumerate(tqdm(loader)):
-                images, masks = batch['image'], batch['mask']
-                images, masks = images.to(device).float(), masks.to(device).float()
-                predicted_masks = net(images).sigmoid() ##Add sigmoid in forward
-                predicted_masks = (predicted_masks > 0.9).to(int)
+        for i, (file_dir, mask_dir) in enumerate(data):
+            data_list, mask_list = [], []
+            for image, mask in zip(sorted(glob.glob(file_dir + '/*.png')), sorted(glob.glob(mask_dir + '/*.png'))):
+                ##TODO rewrite fucking dataloader
+                image = transform(Image.open(image).convert('L')).unsqueeze(0)
+                mask = transform(Image.open(mask).convert('L')).unsqueeze(0)
+                mask = mask > 200
 
-                data_list.append(predicted_masks)
-                mask_list.append(masks)
+                image, mask = image.to(device).float(), mask.to(device).float()
+                predicted_masks = net(image).sigmoid()  ##Add sigmoid in forward
+                predicted_masks = predicted_masks > 0.9
+
+                data_list.append(predicted_masks.squeeze())
+                mask_list.append(mask.squeeze())
 
             predict = torch.stack(data_list, dim=0)
             gr_truth = torch.stack(mask_list, dim=0)
 
-            sdice_metric = lambda x, y: sdice(predict, gr_truth, (1, 1, 1), 1)
+            sdice_metric = sdice(predict.cpu().numpy(), gr_truth.cpu().numpy().astype(bool), (1, 1, 1), 1)
             print(sdice_metric)
             sdice_list.append(sdice_metric)
 
-    # print(sdice_metric.mean())
+    print(sum(sdice_list) / len(sdice_list))
 
+
+def get_dirs(root_path):
+    all_images = glob.glob(f'{root_path}/' + 'train/*')
+    all_masks = glob.glob(f'{root_path}/' + 'mask/*')
+    result = []
+
+    ##Maybe Pathlib + replace is better
+    for image in all_images:
+        mask = next(x for x in all_masks if os.path.basename(image) in x)
+        result.append((image, mask))
+
+    return result
 
 
 def main():
@@ -74,21 +88,14 @@ def main():
 
     n_channels, image_size, batch_size = (params['n_channels'], params['image_size'], params['batch_size'])
     min_channels, max_channels, depth = (params['min_channels'], params['max_channels'], params['depth'])
-    lr, n_epochs = (params['lr'], params['n_epochs'])
-    backup_path, train_data_path, domain_name = (params['backup_dir'], params['domain_dir'], params['domain_name'])
-    net = UNet2D(n_channels=n_channels, n_classes=1, init_features=min_channels, depth=depth, image_size=image_size[0]).to(device)
+    net = UNet2D(n_channels=n_channels, n_classes=1, init_features=min_channels, depth=depth,
+                 image_size=image_size[0]).to(device)
 
     net.load_state_dict(torch.load('siemens_3_basic.pth'))
 
-    transform = transforms.Compose([transforms.Resize([int(image_size[0]), int(image_size[1])]),
-                                    transforms.PILToTensor()])
-    dataset = CustomPictDataset(None, None, None, direct_load=True, path_to_csv_files=os.path.join('/raid/data/DA_BrainDataset/ge15','df_save.csv'),
-                                transform=transform)
-
-    id_list = dataset.data.file_id.unique()
-
-    eval_data(net, dataset, id_list)
-
+    main_path = '/raid/data/DA_BrainDataset/ge15'
+    data = get_dirs(main_path)
+    eval_data(net, data)
 
     # data_loader = DataLoader(train_set, batch_size=8, shuffle=True, drop_last=True)
 

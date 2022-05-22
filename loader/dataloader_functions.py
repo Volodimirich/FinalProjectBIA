@@ -214,7 +214,7 @@ def create_csv_table(path, csv_name):
 def create_df_from_csv(root_path):
     result_data = []
     all_images = glob.glob(f'{root_path}/' + 'train/**/*.png', recursive=True)
-    all_masks =  glob.glob(f'{root_path}/' + 'mask/**/*.png', recursive=True)
+    all_masks = glob.glob(f'{root_path}/' + 'mask/**/*.png', recursive=True)
     for image in all_images:
         im = os.path.basename(image)
         im_id = im[im.rfind('/')+1: im.find('_')]
@@ -226,8 +226,7 @@ def create_df_from_csv(root_path):
         mask = next(x for x in all_masks if im_id in x)
 
         result_data.append((im_id, image, mask, domain))
-    df = pd.DataFrame(result_data, columns=['img', 'mask','file_id', 'domain'])
-    df.set_index('id', inplace = True)
+    df = pd.DataFrame(result_data, columns=['id', 'image','mask', 'domain'])
     return df
 
 

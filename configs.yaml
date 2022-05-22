@@ -1,7 +1,7 @@
 paths:
     backup_dir: /raid/data/DA_BrainDataset/BackUp # path to folder relative to the root with train data
-    domain_dir: /raid/data/DA_BrainDataset/philips3
-    domain_name: siemens_3
+    domain_dir: /raid/data/DA_BrainDataset/ge15
+    domain_name: ge15
 
 data_parameters:
     n_channels: 1 # number of channels ('grey' == 1, 'RGB' == 3)
