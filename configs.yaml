@@ -1,0 +1,19 @@
+paths:
+    backup_dir: /raid/data/DA_BrainDataset/BackUp # path to folder relative to the root with train data
+    domain_dir: /raid/data/DA_BrainDataset/philips3
+    domain_name: siemens_3
+
+data_parameters:
+    n_channels: 1 # number of channels ('grey' == 1, 'RGB' == 3)
+    image_size: 256, 256 # model image input size (height, width)
+    batch_size: 1 # batch size
+
+model_parameters:
+    UNet:
+        depth: 3 # number of downsteps
+        min_channels: 32
+        max_channels: 512
+
+train_parameters:
+    lr: 0.001 # learning rate
+    epochs: 5 # number of epochs
