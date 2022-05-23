@@ -91,9 +91,9 @@ def main():
     net = UNet2D(n_channels=n_channels, n_classes=1, init_features=min_channels, depth=depth,
                  image_size=image_size[0]).to(device)
 
-    net.load_state_dict(torch.load('siemens_3_basic.pth'))
+    net.load_state_dict(torch.load('ge15_basic.pth'))
 
-    main_path = '/raid/data/DA_BrainDataset/ge15'
+    main_path = '/raid/data/DA_BrainDataset/siemens3'
     data = get_dirs(main_path)
     eval_data(net, data)
 

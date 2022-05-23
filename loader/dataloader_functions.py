@@ -226,7 +226,7 @@ def create_df_from_csv(root_path):
         mask = next(x for x in all_masks if im_id in x)
 
         result_data.append((im_id, image, mask, domain))
-    df = pd.DataFrame(result_data, columns=['id', 'image','mask', 'domain'])
+    df = pd.DataFrame(result_data, columns=['id', 'img','mask', 'domain'])
     return df
 
 

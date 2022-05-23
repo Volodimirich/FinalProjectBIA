@@ -10,7 +10,6 @@ def get_params(root):
     for param in params.keys():
         params[param] = os.path.join(root, params[param])
 
-    params.update({'backup_dir': configs['paths']['backup_dir']})
 
     params.update({'n_channels': int(configs['data_parameters']['n_channels']),
                    'image_size': tuple(map(int, configs['data_parameters']['image_size'].split(', '))),

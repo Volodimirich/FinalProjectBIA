@@ -122,7 +122,7 @@ def main():
     n_channels, image_size, batch_size = (params['n_channels'], params['image_size'], params['batch_size'])
     min_channels, max_channels, depth = (params['min_channels'], params['max_channels'], params['depth'])
     lr, n_epochs = (params['lr'], params['n_epochs'])
-    backup_path, train_data_path, domain_name = (params['backup_dir'], params['domain_dir'], params['domain_name'])
+    train_data_path, domain_name = (params['domain_dir'], params['domain_name'])
     net = UNet2D(n_channels=n_channels, n_classes=1, init_features=min_channels, depth=depth, image_size=image_size[0]).to(device)
 
     transform = transforms.Compose([transforms.Resize([int(image_size[0]), int(image_size[1])]),
@@ -130,16 +130,7 @@ def main():
     dataset = CustomPictDataset(None, None, None, direct_load=True, path_to_csv_files=os.path.join(train_data_path,'df_save.csv'),
                                 transform=transform)
 
-    #Temporary delete
-    # dataset_val = CustomPictDataset(None, None, None, load_dir=train_data_path, transform=transform)
-
-    #AbsPath is better
-    # dataset.domain_preproc(train_data_path, domain_name)
-    # dataset_val.domain_preproc(train_data_path, domain_name)
-    #
-
-    # _, val_df = dataset.get_df()
-    # dataset_val.init_df(val_df)
+    dataset = CustomPictDataset(None, None, None, direct_load=True, path_to_files_directory=train_data_path, transform=transform)
 
     n_val = int(len(dataset) * 0.1)
     n_train = len(dataset) - n_val
