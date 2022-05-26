@@ -9,6 +9,9 @@ from torch.utils.data import DataLoader, random_split
 from torchvision.transforms import transforms
 from tqdm import tqdm
 
+from dpipe.predict import divisible_shape
+from dpipe.torch import inference_step
+
 import torch
 import torchvision
 
@@ -22,6 +25,8 @@ from loses.loses import SoloClassDiceLossIvan, CombinedLoss, SoloClassDiceLoss
 from metrics.metric_func import dice_loss
 # for printing
 from models.model import UNet2D
+from models.modelIvan import UNet2D_harder
+from models.segnet import SegNet
 
 torch.set_printoptions(precision=2)
 
@@ -37,6 +42,16 @@ if torch.cuda.is_available():
     torch.backends.cudnn.deterministic = True
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+SPATIAL_DIMS = (-3, -2, -1)
+
+
+def send_images_to_tensorboard(writer, data, name: str, iter: int, count=8, normalize=True, range=(-1, 1)):
+    with torch.no_grad():
+        grid =  torchvision.utils.make_grid(
+            data[0:count], nrow=count, padding=2, pad_value=0, normalize=normalize, range=range,
+            scale_each=False)
+        writer.add_image(name, grid, iter)
+
 
 
 def run_epoch(model, iterator,
@@ -46,6 +61,7 @@ def run_epoch(model, iterator,
               device='cpu', writer=None):
 
     is_train = (phase == 'train')
+
 
     if is_train:
         model.train()
@@ -78,6 +94,13 @@ def run_epoch(model, iterator,
             writer.add_scalar(f"loss_epoch/{phase}", epoch_loss / len(iterator), epoch)
             writer.add_scalar(f"metric_epoch/{phase}", epoch_metric / len(iterator), epoch)
 
+            send_images_to_tensorboard(writer, predicted_masks.float(), iter=epoch, name='predict')
+            send_images_to_tensorboard(writer, masks.float(), iter=epoch, name='mask')
+
+            # writer.add_images(f'predict/{phase}', predicted_masks, dataformats='NCHW')
+            # writer.add_images(f'masks/{phase}', masks, epoch, dataformats='NCHW')
+
+
         return epoch_loss / len(iterator), epoch_metric / len(iterator)
 
 
@@ -91,6 +114,8 @@ def train(model,
           writer,
           best_model_path):
     best_val_loss = float('+inf')
+
+
     for epoch in range(n_epochs):
         train_loss, train_metric = run_epoch(model, train_dataloader,
                                               criterion, optimizer,
@@ -123,12 +148,15 @@ def main():
     min_channels, max_channels, depth = (params['min_channels'], params['max_channels'], params['depth'])
     lr, n_epochs = (params['lr'], params['n_epochs'])
     train_data_path, domain_name = (params['domain_dir'], params['domain_name'])
-    net = UNet2D(n_channels=n_channels, n_classes=1, init_features=min_channels, depth=depth, image_size=image_size[0]).to(device)
-
+    # net = UNet2D(n_channels=n_channels, n_classes=1, init_features=min_channels, depth=depth, image_size=image_size[0]).to(device)
+    net = UNet2D_harder(n_chans_in=n_channels, n_chans_out=1, n_filters_init=16).to(device)
+    # net = SegNet(n_classes=1).to(device)
     transform = transforms.Compose([transforms.Resize([int(image_size[0]), int(image_size[1])]),
                                     transforms.PILToTensor()])
-    dataset = CustomPictDataset(None, None, None, direct_load=True, path_to_csv_files=os.path.join(train_data_path,'df_save.csv'),
-                                transform=transform)
+
+    # transform = transforms.Compose([transforms.PILToTensor()])
+    # dataset = CustomPictDataset(None, None, None, direct_load=True, path_to_csv_files=os.path.join(train_data_path,'df_save.csv'),
+    #                             transform=transform)
 
     dataset = CustomPictDataset(None, None, None, direct_load=True, path_to_files_directory=train_data_path, transform=transform)
 
@@ -146,9 +174,9 @@ def main():
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=0.5, patience=5)
     metric = dice_loss
     n_epochs = 5
-    # writer = SummaryWriter(log_dir=os.path.join('.'))
-    writer=None
-    best_model_path = f"{domain_name}_basic.pth"
+    writer = SummaryWriter()
+    # writer=None
+    best_model_path = f"{domain_name}_padding_ivan.pth"
 
     print("To see the learning process, use command in the new terminal:\ntensorboard --logdir <path to log directory>")
     print()

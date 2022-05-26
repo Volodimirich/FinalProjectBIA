@@ -4,7 +4,7 @@ from dpipe.layers.resblock import ResBlock2d
 from dpipe.layers.conv import PreActivation2d
 
 
-class UNet2D(nn.Module):
+class UNet2D_harder(nn.Module):
     def __init__(self, n_chans_in, n_chans_out, n_filters_init=8):
         super().__init__()
         self.n_filters_init = n_filters_init

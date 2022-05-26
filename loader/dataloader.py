@@ -196,8 +196,23 @@ class CustomPictDataset(Dataset):
         if self.domain_choosen:
             row = self.data.iloc[idx]
             pict, mask = row['img'], row['mask']
+            # test
+            # brain = Image.open(pict).convert('L')
+            # x_old,y_old = brain.size
+
+
+            # x, y = 16 - (x_old%16), 16 - (y_old%16)
+            # x_1, x_2 = (x///2, x//2) if x%2 == 0 else (x//2, x//2 + 1)
+            # y_1, y_2 = (y//2, y//2) if y%2 == 0 else (y//2, y//2 + 1)
+
+
+            # m = torch.nn.ZeroPad2d((x_1,x_2,y_1, y_2))
+            #
             brain = self.transform(Image.open(pict).convert('L'))
             mask = self.transform(Image.open(mask).convert('L'))
+
+            # brain, mask = m(brain), m(mask)
+
             mask = (mask > 200).to(mask.dtype)
             return {'image': brain, 'mask': mask}
         else:
