@@ -20,8 +20,3 @@ not applicable in this area. This paper shows, that the style can be transferred
 - Gleb Bazhenov
 - Dmitrii Gavrilev
 - Saydash Miftakhov
-
-
-## Results 
-
-...TODO...
