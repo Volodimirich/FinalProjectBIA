@@ -18,7 +18,7 @@ import torchvision
 from torch.utils.tensorboard import SummaryWriter
 
 
-from loader.dataloader import CustomPictDataset
+from loader.dataloader import CustomPictDataset, BrainDataset
 
 from config_funcs import get_params
 from loses.loses import SoloClassDiceLossIvan, CombinedLoss, SoloClassDiceLoss
@@ -132,14 +132,16 @@ def train(model,
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
-            torch.save(model.state_dict(), best_model_path)
+            torch.save({
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            }, best_model_path)
 
         print(f'Epoch: {epoch + 1:02}')
 
         print(f'Epoch: {epoch + 1:02}')
         print(f'\tTrain Loss: {train_loss:.3f} | Train Metric: {train_metric:.3f}')
         print(f'\t  Val Loss: {val_loss:.3f} |   Val Metric: {val_metric:.3f}')
-
 
 def main():
     params = get_params('.')
@@ -148,17 +150,15 @@ def main():
     min_channels, max_channels, depth = (params['min_channels'], params['max_channels'], params['depth'])
     lr, n_epochs = (params['lr'], params['n_epochs'])
     train_data_path, domain_name = (params['domain_dir'], params['domain_name'])
+
     # net = UNet2D(n_channels=n_channels, n_classes=1, init_features=min_channels, depth=depth, image_size=image_size[0]).to(device)
     net = UNet2D_harder(n_chans_in=n_channels, n_chans_out=1, n_filters_init=16).to(device)
     # net = SegNet(n_classes=1).to(device)
-    transform = transforms.Compose([transforms.Resize([int(image_size[0]), int(image_size[1])]),
-                                    transforms.PILToTensor()])
+    transform = transforms.Compose([transforms.Resize([int(image_size[0]), int(image_size[1])])])
 
     # transform = transforms.Compose([transforms.PILToTensor()])
-    # dataset = CustomPictDataset(None, None, None, direct_load=True, path_to_csv_files=os.path.join(train_data_path,'df_save.csv'),
-    #                             transform=transform)
 
-    dataset = CustomPictDataset(None, None, None, direct_load=True, path_to_files_directory=train_data_path, transform=transform)
+    dataset = BrainDataset(train_data_path, transform=transform)
 
     n_val = int(len(dataset) * 0.1)
     n_train = len(dataset) - n_val
@@ -170,13 +170,13 @@ def main():
 
 
     criterion = CombinedLoss([CrossEntropyLoss(), SoloClassDiceLoss()], [0.8, 0.2])
-    optimizer = torch.optim.Adam(net.parameters(), lr=lr)
+    optimizer = torch.optim.Adam(net.parameters(), lr=0.01)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=0.5, patience=5)
     metric = dice_loss
     n_epochs = 5
     writer = SummaryWriter()
     # writer=None
-    best_model_path = f"{domain_name}_padding_ivan.pth"
+    best_model_path = f"siemens3_basic.pth"
 
     print("To see the learning process, use command in the new terminal:\ntensorboard --logdir <path to log directory>")
     print()

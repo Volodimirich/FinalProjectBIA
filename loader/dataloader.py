@@ -8,6 +8,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from PIL import Image
 from torchvision.transforms import transforms
+import glob
 # import dataloader_functions as loaderFunc
 
 
@@ -15,9 +16,9 @@ from torchvision.transforms import transforms
 # from dataloader_functions import files_preprocessing, get_data_analyse, data_preparing, create_dataframe_from_scalefile, \
 #     find_max_content, create_dataframe_from_path
 
-from .dataloader_functions import files_preprocessing, get_data_analyse, data_preparing, \
-    create_dataframe_from_scalefile, \
-    find_max_content, create_df_from_csv
+# from .dataloader_functions import files_preprocessing, get_data_analyse, data_preparing, \
+#     create_dataframe_from_scalefile, \
+#     find_max_content, create_df_from_csv
 
 
 class ThresholdTransform(object):
@@ -219,18 +220,48 @@ class CustomPictDataset(Dataset):
             print('You forget to choose current domain')
 
 
-if __name__ == '__main__':
-    dataset_path = ('Dataset/Original', 'Dataset/Mask')
-    domain_mask = ['philips_15', 'philips_3', 'siemens_15']
-    path_to_csv = './meta.csv'
-    TD = CustomPictDataset(None, None, None, load_dir='Back')
-    print(TD.df)
-    TD.domain_preproc('./siemens15', 'siemens_15')
-    DL_DS = DataLoader(TD, batch_size=2, shuffle=False, drop_last=True)
-    print(TD.data)
+class BrainDataset(Dataset):
+    def __init__(self, root_dir, transform=None):
+        self.root_dir = root_dir
+        self.transform = transform
+        train_dir = root_dir + 'train/'
+        mask_dir = root_dir + 'mask/'
+        filenames = [y for x in os.walk(train_dir) for y in glob.glob(os.path.join(x[0], '*.npy'))]
+        masks = [y for x in os.walk(mask_dir) for y in glob.glob(os.path.join(x[0], '*.npy'))]
+        self.data = [(x,y) for x,y in zip(filenames, masks)]
 
-    pos = 0
-    for (idx, batch) in enumerate(DL_DS):  # Print the 'text' data of the batch
-        if idx == 0:
-            print(type(batch[0]))
-            print(batch[2])
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        fpi, fpm = self.data[idx]
+        img, mask = np.load(fpi).astype(np.float32), np.load(fpm).astype(np.float32)
+        x_old,y_old = img.shape
+
+        img, mask = torch.Tensor(img).unsqueeze(0), torch.Tensor(mask).unsqueeze(0)
+
+
+        x, y = 16 - (x_old%16), 16 - (y_old%16)
+        x_1, x_2 = (x//2, x//2) if x%2 == 0 else (x//2, x//2 + 1)
+        y_1, y_2 = (y//2, y//2) if y%2 == 0 else (y//2, y//2 + 1)
+        m = torch.nn.ZeroPad2d((y_1, y_2, x_1, x_2))
+
+        # if self.transform:
+        #     img, mask = self.transform(img), self.transform(mask)
+        img, mask = m(img), m(mask)
+        return {'image': img, 'mask': mask}
+
+def tmp_save(file_list, domain_name):
+    for file in file_list:
+        current = np.load(file)
+        filename = os.path.basename(file)[:-4]
+        os.mkdir(f'/raid/data/DA_BrainDataset/dataset/{domain_name}/{filename}')
+        for z in range(170):
+            lvl = current[..., z]
+            np.save(f'/raid/data/DA_BrainDataset/dataset/{domain_name}/{filename}/lvl{z}', lvl)
+
+
+if __name__ == '__main__':
+    path = '/raid/data/DA_BrainDataset/dataset/siemens3/'
+    loader = BrainDataset(path)
+    print(path)

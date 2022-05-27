@@ -14,7 +14,8 @@ from dpipe.predict import divisible_shape, add_extract_dims
 from dpipe.itertools import lmap
 from tqdm import tqdm
 from PIL import Image
-from medpy.metric.binary import asd, hd
+from medpy.metric.binary import dc, hd
+import sys
 
 from dpipe.batch_iter import unpack_args
 from torch.utils.data import DataLoader
@@ -38,6 +39,7 @@ from metrics.metric_func import dice_loss, sdice
 from models.model import UNet2D
 from models.modelIvan import UNet2D_harder
 from models.segnet import SegNet
+from skimage.transform import resize
 
 seed = 0
 random.seed(seed)
@@ -48,7 +50,6 @@ if torch.cuda.is_available():
     torch.cuda.manual_seed(seed)
     torch.backends.cudnn.deterministic = True
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 def slicewise(predict):
     def wrapper(*arrays):
@@ -56,15 +57,17 @@ def slicewise(predict):
 
     return wrapper
 
+
+def send_images_to_tensorboard(writer, data, name: str, iter: int, count=8, normalize=True, range=(-1, 1)):
+    with torch.no_grad():
+        grid = torchvision.utils.make_grid(
+            data[0:count], nrow=count, padding=2, pad_value=0, normalize=normalize, range=range,
+            scale_each=False)
+        writer.add_image(name, grid, iter)
+
 SPATIAL_DIMS = (-3, -2, -1)
 
-def eval_test(net, data):
-    # file = '/raid/data/DA_BrainDataset/images/CC0247_ge_15_53_M.nii.gz'
-    file = '/raid/data/DA_BrainDataset/images/CC0188_siemens_3_55_F.nii.gz'
-    # mask = '/raid/data/DA_BrainDataset/masks/CC0247_ge_15_53_M_ss.nii.gz'
-    mask = '/raid/data/DA_BrainDataset/masks/CC0188_siemens_3_55_F_ss.nii.gz'
-
-
+def eval(net, data, writer, from_baselines=False, debug=False):
     # predict
     @slicewise  # 3D -> 2D iteratively
     @add_extract_dims(2)  # 2D -> (4D -> predict -> 4D) -> 2D
@@ -72,99 +75,52 @@ def eval_test(net, data):
     def predict(image):
         return inference_step(image, architecture=net, activation=torch.sigmoid)
 
-    # print('Trouble here?')
-    target = scale_mri(np.array(nib.load(file).dataobj).astype(np.float32)[..., :172])
-    mask = scale_mri(np.array(nib.load(mask).dataobj).astype(np.float32)[..., :172]) > 0.5
+    sd_list, hd_list, asd_list = [], [], []
 
-    result = predict(target) > 0.5
-    current_domain_sdice = sdice(result, mask, (1, 1, 1), 1)
-    # hd_val = hd(result, mask)
-    # asd_val = asd(result, mask)
-    # print(hd_val)
-    # print(asd_val)
-    print(current_domain_sdice, 'from nii.gz')
-    #
-    # print(data[0])
-    # img_2 = scale_mri(np.stack([np.asarray(Image.open(img).convert('L')).astype(np.float32) for img in natsorted(glob.glob(data[0] + '/*.png'))]), 2)
-    # mask = scale_mri(np.stack([np.asarray(Image.open(img).convert('L')).astype(np.float32) for img in natsorted(glob.glob(data[1] + '/*.png'))]), 2) > 0.5
-    # result_2 = predict(img_2) > 0.5
+    for i, (file_dir, mask_dir) in enumerate(tqdm(data)):
 
-    # current_domain_sdice = sdice(result_2, mask, (1, 1, 1), 1)
-    # print(current_domain_sdice, 'from img_space')
-
-    img = np.rollaxis(np.load('/raid/data/DA_BrainDataset/siemens_3_np/CC0188_siemens_3_55_F.npy').astype(np.float32)[..., :170],2)
-    img -= img.min()
-    print(img.min(), img.max())
-    img /= img.max()
-    # img *= 255
-    print(img.min(), img.max())
-
-    mask = np.rollaxis(np.load('/raid/data/DA_BrainDataset/siemens_3_np_mask/CC0188_siemens_3_55_F.npy').astype(bool)[..., :170],2)
-
-    result_3 = predict(img) > 0.5
-    current_domain_sdice = sdice(result_3, mask, (1, 1, 1), 1)
-    print(current_domain_sdice, 'from npy_space')
-
-    # sdice_metric = sdice(predict.cpu().numpy().astype(bool), gr_truth.cpu().numpy().astype(bool), (1, 1, 1), 1)
+        img = np.load(file_dir).astype(np.float32)
+        if not from_baselines:
+            img = np.rollaxis(img[..., :170],2)
+        else:
+            img = resize(img, (170, 182, 218))
 
 
-def eval_data(net, data):
-    transform = transforms.Compose([transforms.Resize([int(256), int(256)]),
-                                    transforms.PILToTensor()])
-    net.eval()
-    sd_list = []
-    hd_list = []
-    asd_list = []
+        img -= img.min()
+        img /= img.max()
 
-    with torch.no_grad():
-
-        for i, (file_dir, mask_dir) in enumerate(data):
-            data_list, mask_list = [], []
-            for image, mask in zip(natsorted(glob.glob(file_dir + '/*.png')), natsorted(glob.glob(mask_dir + '/*.png'))):
-                ##TODO rewrite fucking dataloader
-
-                image = transform(Image.open(image).convert('L')).unsqueeze(0)
-                mask = transform(Image.open(mask).convert('L')).unsqueeze(0)
-                mask = (mask > 200).to(mask.dtype)
-
-                # predict
-                @slicewise  # 3D -> 2D iteratively
-                @add_extract_dims(2)  # 2D -> (4D -> predict -> 4D) -> 2D
-                @divisible_shape(divisor=[8] * 2, padding_values=np.min, axis=SPATIAL_DIMS[1:])
-                def predict(image):
-                    return inference_step(image, architecture=net, activation=torch.sigmoid)
-
-                image, mask = image.to(device).float(), mask.to(device).float()
-                predicted_masks = net(image).sigmoid()  ##Add sigmoid in forward
-                predicted_masks = predicted_masks > 0.9
-
-                data_list.append(predicted_masks.squeeze())
-                mask_list.append(mask.squeeze())
-
-            predict = torch.stack(data_list, dim=0)
-            gr_truth = torch.stack(mask_list, dim=0)
-
-            sdice_metric = sdice(predict.cpu().numpy().astype(bool), gr_truth.cpu().numpy().astype(bool), (1, 1, 1), 1)
-            hd_val = hd(predict.cpu().numpy(), gr_truth.cpu().numpy())
-            asd_val= asd(predict.cpu().numpy(), gr_truth.cpu().numpy())
-            print(sdice_metric)
-            print(hd_val)
-            print(asd_val)
-            return
-
-            sd_list.append(sdice_metric)
-            hd_list.append(hd_val)
-            asd_list.append(asd_val)
+        mask = np.rollaxis(np.load(mask_dir).astype(bool)[..., :170],2)
+        #
+        result = predict(img) > 0.9
+        current_domain_sdice = sdice(result, mask, (1, 1, 1), 2)
 
 
-    print(sum(sdice_metric) / len(sdice_metric))
+        hd_val = hd(result, mask)
+        dc_val = dc(result, mask)
+
+        if debug:
+            print(current_domain_sdice, 'sdice')
+            print(hd_val, 'hd')
+            print(dc_val, 'dc')
+
+
+        sd_list.append(current_domain_sdice)
+        hd_list.append(hd_val)
+        asd_list.append(dc_val)
+
+        if writer is not None:
+            send_images_to_tensorboard(writer, torch.from_numpy(result)[...,50].float() * 255, name='predict', iter=i)
+            send_images_to_tensorboard(writer, torch.from_numpy(mask)[...,50].float() * 255, name='train', iter=i)
+
+
+    print(sum(sd_list) / len(sd_list))
     print(sum(hd_list) / len(hd_list))
     print(sum(asd_list) / len(asd_list))
 
 
-def get_dirs(root_path):
-    all_images = glob.glob(f'{root_path}/' + 'train/*')
-    all_masks = glob.glob(f'{root_path}/' + 'mask/*')
+def get_dirs(train_dir, mask_dir):
+    all_images = glob.glob(f'{train_dir}/*')
+    all_masks = glob.glob(f'{mask_dir}/*')
     result = []
 
     ##Maybe Pathlib + replace is better
@@ -177,25 +133,57 @@ def get_dirs(root_path):
 
 def main():
     params = get_params('.')
+    device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
 
     n_channels, image_size, batch_size = (params['n_channels'], params['image_size'], params['batch_size'])
     min_channels, max_channels, depth = (params['min_channels'], params['max_channels'], params['depth'])
+
+    if len(sys.argv) != 1:
+        dev = int(sys.argv[1])
+        if dev < 0 or dev > 3:
+            print('Using incorrect device, basic start')
+        else:
+            print(dev)
+            device = torch.device(f"cuda:{dev}" if torch.cuda.is_available() else "cpu")
+
+
     # net = UNet2D(n_channels=n_channels, n_classes=1, init_features=min_channels, depth=depth,
     #              image_size=image_size[0]).to(device)
     net = UNet2D_harder(n_chans_in=n_channels, n_chans_out=1, n_filters_init=16).to(device)
     # net = SegNet(n_classes=1).to(device)
 
 
-    net.load_state_dict(torch.load('model_1.pth'))
+    # net.load_state_dict(torch.load('siemens3_basic.pth')['model_state_dict'])
+    # if dev == 0:
+    net.load_state_dict(torch.load('weights/model_5.pth'))
+    # elif dev == 1:
+    #     net.load_state_dict(torch.load('siemens15_basic_5.pth'))
+    # elif dev == 2:
+    #     net.load_state_dict(torch.load('siemens15_basic_10.pth'))
+    # elif dev == 3:
+    #     net.load_state_dict(torch.load('siemens15_basic_15.pth'))
+    # net.load_state_dict(torch.load('ge15_10_padding_ivan.pth'))
 
-    main_path = '/raid/data/DA_BrainDataset/ge_15'
-    data = get_dirs(main_path)
-    # data = (data[0],)
-    data = ['/raid/data/DA_BrainDataset/ge15/train/CC0280_ge_15_57_F/', '/raid/data/DA_BrainDataset/ge15/mask/CC0280_ge_15_57_F/']
-    # eval_data(net, data)
-    # eval_data_test(net, data)
-    eval_test(net, data)
-    # data_loader = DataLoader(train_set, batch_size=8, shuffle=True, drop_last=True)
+    # train_dir = '/raid/data/DA_BrainDataset/siemens_3_np'
+
+    # train_dir = '/raid/data/DA_BrainDataset/ge15CUT'
+    mask_dir = '/raid/data/DA_BrainDataset/ge_15_np_mask'
+
+    # train_dir = '/raid/data/DA_BrainDataset/ph3CUT'
+    # mask_dir = '/raid/data/DA_BrainDataset/siemens_15_np_mask'
+
+    ### debug
+    # train_data = ['CC0240_ge_15_60_F.npy', 'CC0241_ge_15_60_F.npy', 'CC0242_ge_15_55_F.npy', 'CC0243_ge_15_58_F.npy',
+    #               'CC0244_ge_15_56_F.npy', 'CC0245_ge_15_48_M.npy']
+    train_data = ['CC0120_siemens_15_58_F', 'CC0121_siemens_15_61_M', 'CC0122_siemens_15_53_F', 'CC0123_siemens_15_58_M',
+                  'CC0124_siemens_15_57_F', 'CC0125_siemens_15_65_F']
+    data = [('/raid/data/DA_BrainDataset/Vladimir_base/siemens_15_np_to_siemens_3_np/' + path, mask_dir + '/' + path) for path in train_data]
+    print(data)
+    # data = get_dirs(train_dir, mask_dir)
+    writer = SummaryWriter()
+
+    print('cut')
+    eval(net, data, writer, from_baselines=True, debug=True)
 
 
 if __name__ == "__main__":

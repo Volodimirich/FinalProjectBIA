@@ -1,11 +1,13 @@
 paths:
-    domain_dir: /raid/data/DA_BrainDataset/ge15
-    domain_name: ge15
+    domain_dir: '/raid/data/DA_BrainDataset/dataset/siemens15/'
+    domain_name: siemens15_basic
+    model_name: weights/model_5.pth
 
 data_parameters:
     n_channels: 1 # number of channels ('grey' == 1, 'RGB' == 3)
     image_size: 256, 256 # model image input size (height, width)
     batch_size: 1 # batch size
+    ratio: 0.05
 
 model_parameters:
     UNet:
