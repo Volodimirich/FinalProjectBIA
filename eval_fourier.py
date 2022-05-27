@@ -175,14 +175,15 @@ def main():
     ### debug
     # train_data = ['CC0240_ge_15_60_F.npy', 'CC0241_ge_15_60_F.npy', 'CC0242_ge_15_55_F.npy', 'CC0243_ge_15_58_F.npy',
     #               'CC0244_ge_15_56_F.npy', 'CC0245_ge_15_48_M.npy']
-    train_data = ['CC0120_siemens_15_58_F', 'CC0121_siemens_15_61_M', 'CC0122_siemens_15_53_F', 'CC0123_siemens_15_58_M',
-                  'CC0124_siemens_15_57_F', 'CC0125_siemens_15_65_F']
+    # train_data = ['CC0120_siemens_15_58_F', 'CC0121_siemens_15_61_M', 'CC0122_siemens_15_53_F', 'CC0123_siemens_15_58_M',
+    #               'CC0124_siemens_15_57_F', 'CC0125_siemens_15_65_F']
+    train_data = ['CC0240_ge_15_60_F.npy', 'CC0241_ge_15_60_F.npy',]
     data = [('/raid/data/DA_BrainDataset/Vladimir_base/siemens_15_np_to_siemens_3_np/' + path, mask_dir + '/' + path) for path in train_data]
-    print(data)
+    data = [('/raid/data/DA_BrainDataset/gleb/' + path, mask_dir + '/' + path) for path in train_data]
+    # print(data)
     # data = get_dirs(train_dir, mask_dir)
     writer = SummaryWriter()
 
-    print('cut')
     eval(net, data, writer, from_baselines=True, debug=True)
 
 
