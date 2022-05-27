@@ -1,4 +1,4 @@
-# FinalProject
+# Analysis of the domain adaptation problem from a different modalities aspect
 
 Final project for Biomedical Imaging & Analytics and Deep Learning courses (Skoltech, 2022).
 
